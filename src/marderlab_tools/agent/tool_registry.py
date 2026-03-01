@@ -83,6 +83,16 @@ class ToolRegistry:
                 ),
                 self._read_file_excerpt,
             ),
+            "resolve_request_context": (
+                ToolSpec(
+                    name="resolve_request_context",
+                    description=(
+                        "Infer likely pipelines/notebooks and missing inputs for a data or plotting request."
+                    ),
+                    args={"prompt": "string"},
+                ),
+                self._resolve_request_context,
+            ),
             "validate_pipeline_config": (
                 ToolSpec(
                     name="validate_pipeline_config",
@@ -211,6 +221,90 @@ class ToolRegistry:
             "start_line": start_line,
             "end_line": end_line,
             "text": text,
+        }
+
+    def _resolve_request_context(self, args: dict[str, Any]) -> dict[str, Any]:
+        prompt = str(args.get("prompt", "")).strip()
+        if not prompt:
+            raise ValueError("resolve_request_context requires 'prompt'")
+        prompt_l = prompt.lower()
+
+        pipeline_aliases = {
+            "contracture": "contracture",
+            "nerve_evoked": "nerve_evoked",
+            "nerve-evoked": "nerve_evoked",
+            "pairedcontractions": "nerve_evoked",
+            "hikcontrol": "hikcontrol",
+            "hik": "hikcontrol",
+            "control": "control",
+            "dualhik": "dualhik",
+            "dual10xk": "dualhik",
+            "freqrange": "freqrange",
+            "gm56acclim": "gm56acclim",
+            "gm56weaklink": "gm56weaklink",
+            "muscle": "muscle",
+            "heartbeat": "heartbeat",
+            "rawheart": "rawheart",
+        }
+        notebook_by_pipeline = {
+            "contracture": ["contracture.ipynb"],
+            "nerve_evoked": ["PairedContractions.ipynb"],
+            "hikcontrol": ["control.ipynb", "HIKSIM.ipynb"],
+            "control": ["control.ipynb"],
+            "dualhik": ["dualhik.ipynb"],
+            "freqrange": ["freqrange.ipynb"],
+            "gm56acclim": ["gm56acclim.ipynb"],
+            "gm56weaklink": ["gm56weaklink.ipynb"],
+            "muscle": ["Muscle.ipynb"],
+            "heartbeat": ["Heartbeat.ipynb"],
+            "rawheart": ["rawheart.ipynb"],
+        }
+
+        candidate_pipelines: list[str] = []
+        for alias, pipeline in pipeline_aliases.items():
+            if alias in prompt_l and pipeline not in candidate_pipelines:
+                candidate_pipelines.append(pipeline)
+
+        candidate_notebooks: list[str] = []
+        for pipeline in candidate_pipelines:
+            for notebook in notebook_by_pipeline.get(pipeline, []):
+                if notebook not in candidate_notebooks:
+                    candidate_notebooks.append(notebook)
+
+        is_data_request = any(
+            token in prompt_l
+            for token in (
+                "plot",
+                "graph",
+                "figure",
+                "amplitude",
+                "data",
+                "contracture",
+                "process",
+                "experiment",
+                "dual10xk",
+            )
+        )
+
+        missing_inputs: list[str] = []
+        if is_data_request and not candidate_pipelines:
+            missing_inputs.append("pipeline_or_experiment_type")
+        if is_data_request and not candidate_notebooks:
+            missing_inputs.append("notebook_confirmation")
+        if is_data_request and "vs" not in prompt_l and "compare" not in prompt_l:
+            missing_inputs.append("comparison_groups")
+
+        return {
+            "prompt": prompt,
+            "is_data_request": is_data_request,
+            "candidate_pipelines": candidate_pipelines,
+            "candidate_notebooks": candidate_notebooks,
+            "missing_inputs": missing_inputs,
+            "defaults": {
+                "prefer_processed_data": True,
+                "missing_data_behavior": "ask_user",
+                "default_stats_test": "t_test",
+            },
         }
 
     def _resolve_config_path(self, path_arg: Any) -> Path:

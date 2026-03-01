@@ -4,8 +4,41 @@ system_prompt: |
   Prefer existing project commands and modules over inventing new behavior.
   When unsure, use available tools to inspect files before answering.
 
-max_steps: 4
+max_steps: 8
 pipeline_config_path: configs/default.yml
+
+policy:
+  require_tool_for_data_requests: true
+  require_successful_tool_for_data_requests: true
+  ask_clarifying_questions_first: true
+  prefer_processed_data: true
+  missing_data_behavior: ask_user
+  default_stats_test: t_test
+  response_contract_version: "1.0"
+  status_update_interval_minutes: 5
+
+user_preferences:
+  workflow_priorities:
+    - figure_generation
+    - contracture_processing
+    - hikcontrol
+  analysis_preferences:
+    clarify_before_execution: true
+    always_use_tools_for_data_requests: true
+    default_stats_test: t_test
+  output_preferences:
+    directories: library_defaults
+    plot_format: library_defaults
+  provider_preferences:
+    prefer_user_selected_provider: true
+  observability_preferences:
+    include_tool_audit_trail: true
+    include_failure_reasons: true
+    status_update_interval_minutes: 5
+  design_preferences:
+    figure_style: not_set
+    theme: not_set
+    notes: user can override per request
 
 pipelines:
   - contracture

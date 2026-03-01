@@ -56,6 +56,9 @@ Features:
 - Exposes safe read-only tools (search code, read excerpts, list pipelines/commands)
 - Adds safe pipeline helpers (static config validation, experiment preview from cache, run-command builder)
 - Supports multiple model providers via `configs/genai.yml` with fallback
+- Enforces tool-first handling for data/plot requests with clarifying questions before execution
+- Returns strict response contracts (status, failure reasons, clarifying questions, tool counts)
+- Persists user preferences in `reports/user_preferences_context.yml` and auto-loads them on startup
 - Saves chat transcripts to `.cache/marderlab/agent_chat/`
 
 Provider env vars:
@@ -81,7 +84,7 @@ marder run \
 This writes SVG sanity plots to:
 
 ```text
-{processed_root}/{notebook_page}/plots/
+{processed_root}/_runs/{run_id}/plots/
 ```
 
 It also writes a VSCode-local gallery for that run:
@@ -99,7 +102,12 @@ Per experiment:
   npy/
     {pipeline}_metrics.npy
     {pipeline}_metrics_tidy.csv
-  plots/
+```
+
+Per run plot images:
+
+```text
+{processed_root}/_runs/{run_id}/plots/
 ```
 
 Per run:

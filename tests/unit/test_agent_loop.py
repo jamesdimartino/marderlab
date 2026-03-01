@@ -117,3 +117,62 @@ def test_agent_loop_never_returns_blank_content(tmp_path: Path) -> None:
     response = loop.ask("What analyses can I run now?")
     assert response.text
     assert "contracture" in response.text
+
+
+class _AnswerOnlyRouter:
+    def list_models(self) -> list[str]:
+        return ["answer-only"]
+
+    def chat(self, *_args, **_kwargs):
+        return {
+            "model": "answer-only",
+            "provider": "mock",
+            "content": '{"action":"answer","text":"here is your figure"}',
+        }
+
+
+def test_data_request_asks_clarifying_questions_before_model_call(tmp_path: Path) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir(parents=True)
+    loop = AgentLoop(
+        router=_AnswerOnlyRouter(),  # type: ignore[arg-type]
+        context=ContextService(workspace),
+        tools=ToolRegistry(ContextService(workspace)),
+    )
+    response = loop.ask("Generate a graph of contracture amplitude from dual10xk experiments.")
+    assert response.contract["status"] == "needs_user_input"
+    assert response.contract["requires_user_input"] is True
+    assert response.contract["tool_call_count"] >= 1
+    assert any("notebook" in q.lower() for q in response.contract["clarifying_questions"])
+    assert "confirm" in response.text.lower()
+
+
+class _NoToolRouter:
+    def list_models(self) -> list[str]:
+        return ["no-tool-router"]
+
+    def chat(self, *_args, **_kwargs):
+        return {"model": "no-tool-router", "provider": "mock", "content": "I did not run tools."}
+
+
+class _FailingToolRegistry(ToolRegistry):
+    def run_tool(self, name: str, args=None):  # type: ignore[override]
+        return {"ok": False, "tool": name, "error": "forced failure"}
+
+
+def test_data_request_enforces_successful_tool_call(tmp_path: Path) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir(parents=True)
+    loop = AgentLoop(
+        router=_NoToolRouter(),  # type: ignore[arg-type]
+        context=ContextService(workspace),
+        tools=_FailingToolRegistry(ContextService(workspace)),
+        policy={
+            "ask_clarifying_questions_first": False,
+            "require_tool_for_data_requests": True,
+            "require_successful_tool_for_data_requests": True,
+        },
+    )
+    response = loop.ask("Process data and create a contracture figure.")
+    assert response.contract["status"] == "needs_user_input"
+    assert "no_successful_tool_call_for_data_request" in response.contract["failure_reasons"]

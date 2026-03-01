@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 import subprocess
@@ -14,9 +15,38 @@ import yaml
 from marderlab_tools.agent import AgentLoop, ContextService, ModelRouter, ToolRegistry
 
 
+USER_PREFERENCES_RELATIVE_PATH = Path("reports") / "user_preferences_context.yml"
+
+
 DEFAULT_AGENT_CONFIG = {
     "system_prompt": "You are a practical assistant for the MarderLab codebase.",
     "max_steps": 4,
+    "policy": {
+        "require_tool_for_data_requests": True,
+        "require_successful_tool_for_data_requests": True,
+        "ask_clarifying_questions_first": True,
+        "prefer_processed_data": True,
+        "missing_data_behavior": "ask_user",
+        "default_stats_test": "t_test",
+        "response_contract_version": "1.0",
+        "status_update_interval_minutes": 5,
+    },
+    "user_preferences": {
+        "workflow_priorities": ["figure_generation", "contracture_processing", "hikcontrol"],
+        "output_preferences": {
+            "directories": "library_defaults",
+            "plot_format": "library_defaults",
+        },
+        "analysis_preferences": {
+            "default_stats_test": "t_test",
+            "clarify_before_execution": True,
+            "always_use_tools_for_data_requests": True,
+        },
+        "design_preferences": {
+            "figure_style": "not_set",
+            "theme": "not_set",
+        },
+    },
     "router": {
         "default_model": "mock-local",
         "fallback_model": "mock-local",
@@ -29,6 +59,41 @@ DEFAULT_AGENT_CONFIG = {
         },
     },
 }
+
+
+def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = dict(base)
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _user_preferences_path(workspace_root: Path) -> Path:
+    return workspace_root / USER_PREFERENCES_RELATIVE_PATH
+
+
+def load_user_preferences(workspace_root: str | Path, config_prefs: dict[str, Any] | None = None) -> dict[str, Any]:
+    workspace = Path(workspace_root).expanduser().resolve()
+    prefs_path = _user_preferences_path(workspace)
+    disk_prefs: dict[str, Any] = {}
+    if prefs_path.exists():
+        with prefs_path.open("r", encoding="utf-8") as handle:
+            disk_prefs = yaml.safe_load(handle) or {}
+    prefs = _merge_dicts(DEFAULT_AGENT_CONFIG["user_preferences"], disk_prefs)
+    if config_prefs:
+        prefs = _merge_dicts(prefs, config_prefs)
+    return prefs
+
+
+def save_user_preferences(workspace_root: str | Path, preferences: dict[str, Any]) -> Path:
+    workspace = Path(workspace_root).expanduser().resolve()
+    path = _user_preferences_path(workspace)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(preferences, sort_keys=False), encoding="utf-8")
+    return path
 
 
 def load_agent_config(path: str | Path) -> dict[str, Any]:
@@ -53,13 +118,21 @@ def load_agent_config(path: str | Path) -> dict[str, Any]:
         raw["system_prompt"] = DEFAULT_AGENT_CONFIG["system_prompt"]
     if "max_steps" not in raw:
         raw["max_steps"] = DEFAULT_AGENT_CONFIG["max_steps"]
+    raw["policy"] = _merge_dicts(DEFAULT_AGENT_CONFIG["policy"], dict(raw.get("policy", {})))
+    raw["user_preferences"] = _merge_dicts(
+        DEFAULT_AGENT_CONFIG["user_preferences"],
+        dict(raw.get("user_preferences", {})),
+    )
     return raw
 
 
 def make_agent(agent_config_path: str | Path, workspace_root: str | Path) -> AgentLoop:
     cfg = load_agent_config(agent_config_path)
+    workspace_path = Path(workspace_root).expanduser().resolve()
+    merged_preferences = load_user_preferences(workspace_path, cfg.get("user_preferences"))
+    save_user_preferences(workspace_path, merged_preferences)
     router = ModelRouter.from_dict(cfg.get("router", {}))
-    context = ContextService(Path(workspace_root))
+    context = ContextService(workspace_path)
     pipelines = list(
         cfg.get(
             "pipelines",
@@ -86,13 +159,31 @@ def make_agent(agent_config_path: str | Path, workspace_root: str | Path) -> Age
     )
     system_prompt = str(cfg.get("system_prompt", ""))
     max_steps = int(cfg.get("max_steps", 4))
-    return AgentLoop(
-        router=router,
-        context=context,
-        tools=tools,
-        system_prompt=system_prompt,
-        max_steps=max_steps,
+    policy = _merge_dicts(
+        dict(cfg.get("policy", {})),
+        {
+            "default_stats_test": str(
+                merged_preferences.get("analysis_preferences", {}).get("default_stats_test", "t_test")
+            ),
+            "ask_clarifying_questions_first": bool(
+                merged_preferences.get("analysis_preferences", {}).get("clarify_before_execution", True)
+            ),
+            "require_tool_for_data_requests": bool(
+                merged_preferences.get("analysis_preferences", {}).get("always_use_tools_for_data_requests", True)
+            ),
+        },
     )
+    agent_loop_init = inspect.signature(AgentLoop.__init__)
+    kwargs: dict[str, Any] = {
+        "router": router,
+        "context": context,
+        "tools": tools,
+        "system_prompt": system_prompt,
+        "max_steps": max_steps,
+    }
+    if "policy" in agent_loop_init.parameters:
+        kwargs["policy"] = policy
+    return AgentLoop(**kwargs)
 
 
 def run_single_prompt(
@@ -104,12 +195,14 @@ def run_single_prompt(
 ) -> dict[str, Any]:
     agent = make_agent(agent_config_path=agent_config_path, workspace_root=workspace_root)
     response = agent.ask(prompt=prompt, model_name=model_name, conversation=conversation)
+    contract = getattr(response, "contract", {}) or {}
     return {
         "text": response.text,
         "model": response.model,
         "provider": response.provider,
         "steps": response.steps,
         "raw": response.raw,
+        "contract": contract,
     }
 
 
@@ -121,9 +214,16 @@ def launch_streamlit_window(
     open_browser: bool = False,
 ) -> int:
     script_path = Path(__file__).resolve()
+    workspace_path = Path(workspace_root).expanduser().resolve()
     env = os.environ.copy()
     env["MARDER_AGENT_CONFIG"] = str(Path(agent_config_path).expanduser().resolve())
-    env["MARDER_WORKSPACE_ROOT"] = str(Path(workspace_root).expanduser().resolve())
+    env["MARDER_WORKSPACE_ROOT"] = str(workspace_path)
+    src_path = str((workspace_path / "src").resolve())
+    existing_pythonpath = env.get("PYTHONPATH", "").strip()
+    if existing_pythonpath:
+        env["PYTHONPATH"] = src_path + os.pathsep + existing_pythonpath
+    else:
+        env["PYTHONPATH"] = src_path
 
     cmd = [
         sys.executable,
@@ -143,12 +243,24 @@ def launch_streamlit_window(
 
 
 def _chat_record_path(workspace_root: Path) -> Path:
-    stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S%fZ")
     return workspace_root / ".cache" / "marderlab" / "agent_chat" / f"chat_{stamp}.json"
 
 
 def _save_chat_record(workspace_root: Path, payload: dict[str, Any]) -> Path:
     path = _chat_record_path(workspace_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def _agent_audit_record_path(workspace_root: Path) -> Path:
+    stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    return workspace_root / ".cache" / "marderlab" / "agent_audit" / f"audit_{stamp}.json"
+
+
+def _save_agent_audit_record(workspace_root: Path, payload: dict[str, Any]) -> Path:
+    path = _agent_audit_record_path(workspace_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
@@ -174,9 +286,11 @@ def _run_streamlit_ui() -> None:
             st.session_state["last_record"] = ""
 
     workspace_path = Path(workspace_root).expanduser().resolve()
+    prefs_path = _user_preferences_path(workspace_path)
     agent = make_agent(agent_config_path=agent_config, workspace_root=workspace_path)
     models = agent.router.list_models()
     selected_model = st.sidebar.selectbox("Model", models, index=0 if models else None)
+    st.sidebar.caption(f"Preferences: {prefs_path}")
 
     st.subheader("Workspace + Tools")
     c1, c2 = st.columns(2)
@@ -214,11 +328,21 @@ def _run_streamlit_ui() -> None:
                         conversation=st.session_state["chat_history"],
                     )
                 st.markdown(result["text"] or "_(no content)_")
-                meta = f"model={result['model']} provider={result['provider']} tools_used={len(result['steps'])}"
+                contract = result.get("contract", {})
+                meta = (
+                    f"model={result['model']} provider={result['provider']} "
+                    f"tools_used={len(result['steps'])} status={contract.get('status', 'unknown')}"
+                )
                 st.caption(meta)
                 if result["steps"]:
                     with st.expander("Tool calls"):
                         st.json(result["steps"])
+                if contract.get("clarifying_questions"):
+                    with st.expander("Clarifying Questions"):
+                        st.json(contract.get("clarifying_questions"))
+                if contract.get("failure_reasons"):
+                    with st.expander("Failure Reasons"):
+                        st.json(contract.get("failure_reasons"))
             except Exception as exc:
                 result = {
                     "text": f"Provider request failed: {exc}",
@@ -226,6 +350,16 @@ def _run_streamlit_ui() -> None:
                     "provider": "error",
                     "steps": [],
                     "raw": {},
+                    "contract": {
+                        "version": "1.0",
+                        "status": "failed",
+                        "requires_user_input": True,
+                        "clarifying_questions": [],
+                        "failure_reasons": [str(exc)],
+                        "tool_call_count": 0,
+                        "successful_tool_call_count": 0,
+                        "status_update_interval_minutes": 5,
+                    },
                 }
                 meta = f"model={result['model']} provider={result['provider']} tools_used=0"
                 st.error(result["text"])
@@ -244,6 +378,18 @@ def _run_streamlit_ui() -> None:
             "messages": st.session_state["chat_messages"],
         }
         record_path = _save_chat_record(workspace_path, record)
+        _save_agent_audit_record(
+            workspace_path,
+            {
+                "saved_at": datetime.now(tz=UTC).isoformat(),
+                "prompt": prompt,
+                "model": result.get("model"),
+                "provider": result.get("provider"),
+                "steps": result.get("steps", []),
+                "contract": result.get("contract", {}),
+                "raw": result.get("raw", {}),
+            },
+        )
         st.session_state["last_record"] = str(record_path)
 
     if st.session_state.get("last_record"):

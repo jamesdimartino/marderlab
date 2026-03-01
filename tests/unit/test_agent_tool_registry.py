@@ -16,6 +16,7 @@ def test_tool_registry_lists_and_runs_tools(tmp_path: Path) -> None:
     names = {item["name"] for item in tools}
     assert "list_pipelines" in names
     assert "search_code" in names
+    assert "resolve_request_context" in names
 
     payload = registry.run_tool("list_pipelines")
     assert payload["ok"]
@@ -24,6 +25,19 @@ def test_tool_registry_lists_and_runs_tools(tmp_path: Path) -> None:
     search = registry.run_tool("search_code", {"query": "contracture"})
     assert search["ok"]
     assert len(search["result"]["hits"]) == 1
+
+
+def test_resolve_request_context_maps_dual10xk_to_dualhik(tmp_path: Path) -> None:
+    registry = ToolRegistry(context=ContextService(tmp_path))
+    payload = registry.run_tool(
+        "resolve_request_context",
+        {"prompt": "generate a graph of contracture amplitude for gm6 vs cpv46p1 from dual10xk experiments"},
+    )
+    assert payload["ok"]
+    result = payload["result"]
+    assert result["is_data_request"] is True
+    assert "dualhik" in result["candidate_pipelines"]
+    assert "dualhik.ipynb" in result["candidate_notebooks"]
 
 
 def test_tool_registry_rejects_unknown_tool(tmp_path: Path) -> None:

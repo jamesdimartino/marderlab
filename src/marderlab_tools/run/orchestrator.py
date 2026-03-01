@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -367,6 +368,7 @@ def _run_single_experiment(
     pipeline_name: str,
     settings: Any,
     output_root: Path,
+    run_plots_root: Path,
     generate_plots: bool,
 ) -> PipelineResult:
     checks: list[CheckResult] = []
@@ -401,7 +403,7 @@ def _run_single_experiment(
     payload = analyze_fn(typed_records, settings)
 
     npy_dir = output_root / notebook_page / "npy"
-    plots_dir = output_root / notebook_page / "plots"
+    plots_dir = run_plots_root
     npy_path = npy_dir / f"{pipeline_name}_metrics.npy"
     tidy_csv_path = npy_dir / f"{pipeline_name}_metrics_tidy.csv"
     _atomic_save_npy(npy_path, payload)
@@ -419,7 +421,7 @@ def _run_single_experiment(
             float(item["metrics"].get("peak_cn", item["metrics"].get("amplitude_cn", 0.0)))
             for item in payload.get("files", [])
         ]
-        plot_path = plots_dir / f"{pipeline_name}_peaks.svg"
+        plot_path = plots_dir / f"{pipeline_name}_{notebook_page}_peaks.svg"
         plot_warning = _maybe_plot(plot_path, f"{notebook_page} {pipeline_name} peaks", peaks)
         output_paths["plot"] = str(plot_path)
         if plot_warning:
@@ -479,6 +481,7 @@ def _compute_run_stats(results: list[PipelineResult]) -> dict[str, Any]:
 
 def _write_run_reports(
     config: RunConfig,
+    run_id: str,
     title: str,
     results: list[PipelineResult],
     input_files: list[Path],
@@ -487,8 +490,8 @@ def _write_run_reports(
     finished_at: datetime,
     metadata_note: str,
 ) -> dict[str, Any]:
-    manifest = make_manifest(config, input_files, parameters, started_at, finished_at)
-    run_dir = config.paths.processed_root / "_runs" / manifest.run_id
+    manifest = make_manifest(config, input_files, parameters, started_at, finished_at, run_id=run_id)
+    run_dir = config.paths.processed_root / "_runs" / run_id
     report = {
         "title": title,
         "manifest": manifest_to_dict(manifest),
@@ -511,7 +514,7 @@ def _write_run_reports(
 
     vscode_gallery = _write_vscode_sanity_gallery(
         config=config,
-        run_id=manifest.run_id,
+        run_id=run_id,
         results=results,
     )
     if vscode_gallery is not None:
@@ -599,6 +602,8 @@ def run_pipeline(
     progress: ProgressFn | None = None,
 ) -> dict[str, Any]:
     started_at = datetime.now(tz=UTC)
+    run_id = uuid.uuid4().hex[:12]
+    run_plots_root = config.paths.processed_root / "_runs" / run_id / "plots"
     pipeline_key, settings = _pipeline_setting(config, pipeline_name)
     metadata_df, _used_fallback, note = load_metadata_with_fallback(config)
 
@@ -644,6 +649,7 @@ def run_pipeline(
                 pipeline_name=pipeline_key,
                 settings=settings,
                 output_root=config.paths.processed_root,
+                run_plots_root=run_plots_root,
                 generate_plots=generate_plots,
             )
         except Exception as exc:
@@ -663,6 +669,7 @@ def run_pipeline(
     input_files = analyzed_input_files or iter_all_input_files({p: experiments[p] for p in selected_pages})
     return _write_run_reports(
         config=config,
+        run_id=run_id,
         title=f"Marder run report: {pipeline_key}",
         results=results,
         input_files=input_files,
@@ -686,6 +693,8 @@ def run_all(
     progress: ProgressFn | None = None,
 ) -> dict[str, Any]:
     started_at = datetime.now(tz=UTC)
+    run_id = uuid.uuid4().hex[:12]
+    run_plots_root = config.paths.processed_root / "_runs" / run_id / "plots"
     metadata_df, _used_fallback, note = load_metadata_with_fallback(config)
     required_check = check_required_metadata_fields(metadata_df, config.metadata.required_fields)
     if not required_check.passed:
@@ -751,6 +760,7 @@ def run_all(
                     pipeline_name=pipeline_run_name,
                     settings=settings,
                     output_root=config.paths.processed_root,
+                    run_plots_root=run_plots_root,
                     generate_plots=generate_plots,
                 )
             except Exception as exc:
@@ -769,6 +779,7 @@ def run_all(
     finished_at = datetime.now(tz=UTC)
     return _write_run_reports(
         config=config,
+        run_id=run_id,
         title="Marder run report: run-all",
         results=results,
         input_files=selected_input_files,

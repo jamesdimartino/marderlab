@@ -34,11 +34,12 @@ def make_manifest(
     parameters: dict[str, Any],
     started_at: datetime,
     finished_at: datetime,
+    run_id: str | None = None,
 ) -> RunManifest:
-    run_id = uuid.uuid4().hex[:12]
+    selected_run_id = run_id or uuid.uuid4().hex[:12]
     machine = f"{platform.system()}-{platform.release()}@{socket.gethostname()}"
     return RunManifest(
-        run_id=run_id,
+        run_id=selected_run_id,
         started_at=started_at.astimezone(UTC).isoformat(),
         finished_at=finished_at.astimezone(UTC).isoformat(),
         config_path=str(config.config_path or ""),

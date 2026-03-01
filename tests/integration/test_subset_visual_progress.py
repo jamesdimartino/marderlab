@@ -131,3 +131,8 @@ def test_subset_pages_and_live_progress(tmp_path: Path, monkeypatch) -> None:
     gallery = report["artifacts"].get("vscode_sanity_html")
     assert gallery is not None
     assert Path(gallery).exists()
+    run_id = report["manifest"]["run_id"]
+    plot_path = Path(report["results"][0]["output_paths"]["plot"])
+    expected_plot_dir = processed / "_runs" / run_id / "plots"
+    assert plot_path.parent == expected_plot_dir
+    assert plot_path.exists()
