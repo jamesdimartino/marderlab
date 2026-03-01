@@ -64,6 +64,19 @@ class AgentLoop:
         messages.append({"role": "user", "content": prompt})
 
         steps: list[dict[str, Any]] = []
+        grounded_steps = self._auto_ground(prompt)
+        if grounded_steps:
+            steps.extend(grounded_steps)
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "AUTO_GROUNDED_TOOL_RESULTS\n"
+                        + json.dumps(grounded_steps, indent=2)
+                        + "\nUse these grounded facts when answering."
+                    ),
+                }
+            )
         last_raw: dict[str, Any] = {}
 
         for _ in range(self.max_steps):
@@ -73,6 +86,23 @@ class AgentLoop:
                 tools=self.tools.as_openai_tools(),
             )
             last_raw = raw
+            native_calls = raw.get("tool_calls", [])
+            if isinstance(native_calls, list) and native_calls:
+                tool_feedback = self._run_native_tool_calls(native_calls)
+                steps.extend(tool_feedback["steps"])
+                messages.append({"role": "assistant", "content": str(raw.get("content", "") or "")})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "TOOL_RESULT\n"
+                            + json.dumps(tool_feedback["results"], indent=2)
+                            + "\nUse this result and continue."
+                        ),
+                    }
+                )
+                continue
+
             content = str(raw.get("content", "")).strip()
             parsed = self._parse_json_action(content)
 
@@ -97,7 +127,7 @@ class AgentLoop:
             if parsed and parsed.get("action") == "answer":
                 text = str(parsed.get("text", "")).strip()
                 return AgentResponse(
-                    text=text,
+                    text=text or self._deterministic_fallback(prompt, steps),
                     model=str(raw.get("model", "")),
                     provider=str(raw.get("provider", "")),
                     steps=steps,
@@ -105,6 +135,8 @@ class AgentLoop:
                 )
 
             # If model did not follow JSON format, return raw content.
+            if not content:
+                content = self._deterministic_fallback(prompt, steps)
             return AgentResponse(
                 text=content,
                 model=str(raw.get("model", "")),
@@ -114,7 +146,7 @@ class AgentLoop:
             )
 
         return AgentResponse(
-            text="Agent stopped after max tool steps without final answer.",
+            text=self._deterministic_fallback(prompt, steps),
             model=str(last_raw.get("model", "")),
             provider=str(last_raw.get("provider", "")),
             steps=steps,
@@ -139,3 +171,59 @@ class AgentLoop:
         if "action" not in parsed:
             return None
         return parsed
+
+    def _run_native_tool_calls(self, native_calls: list[dict[str, Any]]) -> dict[str, Any]:
+        steps: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
+        for call in native_calls:
+            name = str(call.get("name", "")).strip()
+            args = call.get("args", {}) if isinstance(call.get("args", {}), dict) else {}
+            result = self.tools.run_tool(name, args)
+            steps.append({"tool": name, "args": args, "result": result})
+            results.append({"name": name, "args": args, "result": result, "id": call.get("id", "")})
+        return {"steps": steps, "results": results}
+
+    def _auto_ground(self, prompt: str) -> list[dict[str, Any]]:
+        p = prompt.lower()
+        candidates: list[tuple[str, dict[str, Any]]] = []
+        if ("pipeline" in p or "analysis" in p or "analyses" in p) and any(
+            token in p for token in ("what", "which", "available", "can you run", "end to end")
+        ):
+            candidates.append(("list_pipelines", {}))
+        if any(token in p for token in ("command", "cli", "how do i run", "options")):
+            candidates.append(("list_cli_commands", {}))
+
+        pipeline_hint = self._detect_pipeline_hint(p)
+        if pipeline_hint and any(token in p for token in ("preview", "which experiments", "what experiments")):
+            candidates.append(("preview_pipeline_experiments", {"pipeline": pipeline_hint, "limit": 20}))
+
+        steps: list[dict[str, Any]] = []
+        for name, args in candidates:
+            result = self.tools.run_tool(name, args)
+            steps.append({"tool": name, "args": args, "result": result, "source": "auto_ground"})
+        return steps
+
+    @staticmethod
+    def _detect_pipeline_hint(prompt_lower: str) -> str | None:
+        if "contracture" in prompt_lower:
+            return "contracture"
+        if "nerve" in prompt_lower:
+            return "nerve_evoked"
+        if "hik" in prompt_lower or "control" in prompt_lower:
+            return "hikcontrol"
+        return None
+
+    def _deterministic_fallback(self, prompt: str, steps: list[dict[str, Any]]) -> str:
+        prompt_l = prompt.lower()
+        if "pipeline" in prompt_l or "analysis" in prompt_l or "analyses" in prompt_l:
+            payload = self.tools.run_tool("list_pipelines", {})
+            pipelines = payload.get("result", {}).get("pipelines", []) if payload.get("ok") else []
+            if pipelines:
+                as_text = ", ".join(str(x) for x in pipelines)
+                return f"Current end-to-end pipelines available in this codebase: {as_text}."
+        if "hello" in prompt_l or "hi" == prompt_l.strip():
+            return "Hello. I can help with pipeline selection, command generation, and config validation."
+
+        if steps:
+            return "I could not format a full response, but I did run tool checks. Open 'Tool calls' to inspect results."
+        return "I could not produce a complete answer from the model response. Please retry or ask a more specific question."

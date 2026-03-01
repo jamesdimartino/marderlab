@@ -144,10 +144,18 @@ class ModelRouter:
         self._raise_for_status_with_body(resp, "openai")
         body = resp.json()
         message = body["choices"][0]["message"]
+        tool_calls = self._extract_openai_tool_calls(message)
+        content = message.get("content", "") or ""
+        if isinstance(content, list):
+            content = "\n".join(
+                str(item.get("text", "")) if isinstance(item, dict) else str(item)
+                for item in content
+            ).strip()
         return {
             "model": spec.name,
             "provider": "openai",
-            "content": message.get("content", "") or "",
+            "content": content,
+            "tool_calls": tool_calls,
             "raw": body,
         }
 
@@ -189,13 +197,23 @@ class ModelRouter:
         self._raise_for_status_with_body(resp, "anthropic")
         body = resp.json()
         text_chunks = []
+        tool_calls: list[dict[str, Any]] = []
         for item in body.get("content", []):
             if item.get("type") == "text":
                 text_chunks.append(item.get("text", ""))
+            if item.get("type") == "tool_use":
+                tool_calls.append(
+                    {
+                        "id": str(item.get("id", "")),
+                        "name": str(item.get("name", "")),
+                        "args": item.get("input", {}) if isinstance(item.get("input", {}), dict) else {},
+                    }
+                )
         return {
             "model": spec.name,
             "provider": "anthropic",
             "content": "\n".join(text_chunks).strip(),
+            "tool_calls": tool_calls,
             "raw": body,
         }
 
@@ -272,3 +290,28 @@ class ModelRouter:
             + (f" details={detail}" if detail else "")
         )
         raise requests.HTTPError(message, response=response)
+
+    @staticmethod
+    def _extract_openai_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
+        calls: list[dict[str, Any]] = []
+        for call in message.get("tool_calls", []) or []:
+            fn = call.get("function", {}) if isinstance(call, dict) else {}
+            args_raw = fn.get("arguments", "{}")
+            args: dict[str, Any] = {}
+            if isinstance(args_raw, dict):
+                args = args_raw
+            elif isinstance(args_raw, str):
+                try:
+                    parsed = json.loads(args_raw)
+                    if isinstance(parsed, dict):
+                        args = parsed
+                except json.JSONDecodeError:
+                    args = {}
+            calls.append(
+                {
+                    "id": str(call.get("id", "")),
+                    "name": str(fn.get("name", "")),
+                    "args": args,
+                }
+            )
+        return calls
