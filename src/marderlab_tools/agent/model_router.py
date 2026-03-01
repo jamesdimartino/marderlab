@@ -141,7 +141,7 @@ class ModelRouter:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
         resp = requests.post(url, headers=headers, json=payload, timeout=90)
-        resp.raise_for_status()
+        self._raise_for_status_with_body(resp, "openai")
         body = resp.json()
         message = body["choices"][0]["message"]
         return {
@@ -169,7 +169,11 @@ class ModelRouter:
         }
         # Anthropic expects system prompt separately; use user/assistant exchange only.
         system_chunks = [m["content"] for m in messages if m.get("role") == "system"]
-        non_system = [m for m in messages if m.get("role") != "system"]
+        non_system = [
+            {"role": str(m.get("role", "")), "content": str(m.get("content", ""))}
+            for m in messages
+            if str(m.get("role", "")) in {"user", "assistant"} and str(m.get("content", "")).strip()
+        ]
         payload: dict[str, Any] = {
             "model": spec.model,
             "max_tokens": max_tokens,
@@ -178,9 +182,11 @@ class ModelRouter:
             "system": "\n\n".join(system_chunks),
         }
         if tools and spec.supports_tools:
-            payload["tools"] = tools
+            anthropic_tools = self._to_anthropic_tools(tools)
+            if anthropic_tools:
+                payload["tools"] = anthropic_tools
         resp = requests.post(url, headers=headers, json=payload, timeout=90)
-        resp.raise_for_status()
+        self._raise_for_status_with_body(resp, "anthropic")
         body = resp.json()
         text_chunks = []
         for item in body.get("content", []):
@@ -209,7 +215,7 @@ class ModelRouter:
             "options": {"temperature": temperature, "num_predict": max_tokens},
         }
         resp = requests.post(url, json=payload, timeout=90)
-        resp.raise_for_status()
+        ModelRouter._raise_for_status_with_body(resp, "ollama")
         body = resp.json()
         content = body.get("message", {}).get("content", "")
         return {
@@ -227,3 +233,42 @@ class ModelRouter:
         if not key:
             raise ValueError(f"Missing API key in environment variable: {env_name}")
         return key
+
+    @staticmethod
+    def _to_anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        converted: list[dict[str, Any]] = []
+        for tool in tools:
+            if tool.get("type") == "function":
+                fn = tool.get("function", {})
+                name = str(fn.get("name", "")).strip()
+                if not name:
+                    continue
+                converted.append(
+                    {
+                        "name": name,
+                        "description": str(fn.get("description", "")).strip(),
+                        "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
+                    }
+                )
+                continue
+            if "name" in tool and "input_schema" in tool:
+                converted.append(tool)
+        return converted
+
+    @staticmethod
+    def _raise_for_status_with_body(response: requests.Response, provider: str) -> None:
+        if response.status_code < 400:
+            return
+        detail = ""
+        try:
+            detail_obj = response.json()
+            detail = json.dumps(detail_obj)
+        except Exception:
+            detail = response.text.strip()
+        if len(detail) > 500:
+            detail = detail[:500] + "..."
+        message = (
+            f"{provider} api error {response.status_code} for {response.url}."
+            + (f" details={detail}" if detail else "")
+        )
+        raise requests.HTTPError(message, response=response)

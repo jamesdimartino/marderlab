@@ -187,20 +187,32 @@ def _run_streamlit_ui() -> None:
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                result = run_single_prompt(
-                    prompt=prompt,
-                    agent_config_path=agent_config,
-                    workspace_root=workspace_path,
-                    model_name=selected_model,
-                    conversation=st.session_state["chat_history"],
-                )
-            st.markdown(result["text"] or "_(no content)_")
-            meta = f"model={result['model']} provider={result['provider']} tools_used={len(result['steps'])}"
-            st.caption(meta)
-            if result["steps"]:
-                with st.expander("Tool calls"):
-                    st.json(result["steps"])
+            try:
+                with st.spinner("Thinking..."):
+                    result = run_single_prompt(
+                        prompt=prompt,
+                        agent_config_path=agent_config,
+                        workspace_root=workspace_path,
+                        model_name=selected_model,
+                        conversation=st.session_state["chat_history"],
+                    )
+                st.markdown(result["text"] or "_(no content)_")
+                meta = f"model={result['model']} provider={result['provider']} tools_used={len(result['steps'])}"
+                st.caption(meta)
+                if result["steps"]:
+                    with st.expander("Tool calls"):
+                        st.json(result["steps"])
+            except Exception as exc:
+                result = {
+                    "text": f"Provider request failed: {exc}",
+                    "model": selected_model or "unknown",
+                    "provider": "error",
+                    "steps": [],
+                    "raw": {},
+                }
+                meta = f"model={result['model']} provider={result['provider']} tools_used=0"
+                st.error(result["text"])
+                st.caption(meta)
 
         st.session_state["chat_messages"].append(
             {"role": "assistant", "content": result["text"], "meta": meta}

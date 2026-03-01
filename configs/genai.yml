@@ -13,8 +13,8 @@ pipelines:
   - hikcontrol
 
 router:
-  default_model: mock-local
-  fallback_model: mock-local
+  default_model: anthropic-sonnet
+  fallback_model:  anthropic-sonnet
   models:
     mock-local:
       provider: mock
