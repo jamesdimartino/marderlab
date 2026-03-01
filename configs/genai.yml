@@ -1,0 +1,44 @@
+system_prompt: |
+  You are the MarderLab coding and analysis assistant.
+  Focus on practical, safe guidance grounded in the local codebase.
+  Prefer existing project commands and modules over inventing new behavior.
+  When unsure, use available tools to inspect files before answering.
+
+max_steps: 4
+
+pipelines:
+  - contracture
+  - nerve_evoked
+  - hikcontrol
+
+router:
+  default_model: mock-local
+  fallback_model: mock-local
+  models:
+    mock-local:
+      provider: mock
+      model: marder-mock
+      supports_tools: true
+      default_temperature: 0.1
+      default_max_tokens: 1200
+    openai-gpt5-mini:
+      provider: openai
+      model: gpt-5-mini
+      api_key_env: OPENAI_API_KEY
+      supports_tools: true
+      default_temperature: 0.1
+      default_max_tokens: 1200
+    anthropic-sonnet:
+      provider: anthropic
+      model: claude-sonnet-4-5
+      api_key_env: ANTHROPIC_API_KEY
+      supports_tools: true
+      default_temperature: 0.1
+      default_max_tokens: 1200
+    ollama-qwen:
+      provider: ollama
+      model: qwen2.5-coder:latest
+      base_url: http://127.0.0.1:11434
+      supports_tools: false
+      default_temperature: 0.1
+      default_max_tokens: 1200

@@ -63,6 +63,23 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print per-experiment progress as analysis runs.",
     )
+
+    genai_window = sub.add_parser("genai-window", help="Launch Streamlit GenAI window.")
+    genai_window.add_argument("--agent-config", default="configs/genai.yml", help="Path to agent config YAML.")
+    genai_window.add_argument("--workspace-root", default=".", help="Workspace root for code context.")
+    genai_window.add_argument("--host", default="127.0.0.1", help="Host address for Streamlit.")
+    genai_window.add_argument("--port", default=8501, type=int, help="Port for Streamlit.")
+    genai_window.add_argument(
+        "--browser",
+        action="store_true",
+        help="Open browser automatically (headless off).",
+    )
+
+    genai_chat = sub.add_parser("genai-chat", help="Run one GenAI prompt in terminal mode.")
+    genai_chat.add_argument("--agent-config", default="configs/genai.yml", help="Path to agent config YAML.")
+    genai_chat.add_argument("--workspace-root", default=".", help="Workspace root for code context.")
+    genai_chat.add_argument("--model", default="", help="Model name in agent config.")
+    genai_chat.add_argument("--prompt", required=True, help="Prompt to run.")
     return parser
 
 
@@ -85,9 +102,11 @@ def _progress(enabled: bool) -> Callable[[str], None] | None:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    config = load_config(args.config)
 
     try:
+        if args.command in {"doctor", "sync-metadata", "run", "run-all"}:
+            config = load_config(args.config)
+
         if args.command == "doctor":
             result = doctor(config)
             _print_json(result)
@@ -132,6 +151,29 @@ def main(argv: list[str] | None = None) -> int:
                     "metadata_note": report.get("metadata_note"),
                 }
             )
+            return 0
+
+        if args.command == "genai-window":
+            from marderlab_tools.app.genai_window import launch_streamlit_window
+
+            return launch_streamlit_window(
+                agent_config_path=args.agent_config,
+                workspace_root=args.workspace_root,
+                host=args.host,
+                port=int(args.port),
+                open_browser=bool(args.browser),
+            )
+
+        if args.command == "genai-chat":
+            from marderlab_tools.app.genai_window import run_single_prompt
+
+            result = run_single_prompt(
+                prompt=args.prompt,
+                agent_config_path=args.agent_config,
+                workspace_root=args.workspace_root,
+                model_name=args.model or None,
+            )
+            _print_json(result)
             return 0
 
         parser.print_help()

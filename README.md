@@ -25,9 +25,38 @@ marder run --pipeline contracture --config configs/default.yml
 marder run --pipeline nerve-evoked --config configs/default.yml
 marder run --pipeline hikcontrol --config configs/default.yml
 marder run-all --config configs/default.yml
+marder genai-chat --agent-config configs/genai.yml --prompt "How does run-all select experiments?"
+marder genai-window --agent-config configs/genai.yml
 ```
 
 Add `--plots` to `run` or `run-all` to save SVG plots.
+
+## GenAI Window
+
+Install app dependency:
+
+```bash
+pip install -e ".[analysis,dev,app]"
+```
+
+Launch local chat window:
+
+```bash
+marder genai-window --agent-config configs/genai.yml --workspace-root .
+```
+
+Features:
+
+- Reads project code context directly from your VSCode workspace
+- Exposes safe read-only tools (search code, read excerpts, list pipelines/commands)
+- Supports multiple model providers via `configs/genai.yml` with fallback
+- Saves chat transcripts to `.cache/marderlab/agent_chat/`
+
+Provider env vars:
+
+- OpenAI: `OPENAI_API_KEY`
+- Anthropic: `ANTHROPIC_API_KEY`
+- Ollama: no key required (local server)
 
 ## Visual sanity-check subset
 
