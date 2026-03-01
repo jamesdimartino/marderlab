@@ -11,7 +11,7 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
-from marderlab_tools.analysis import contracture, nerve_evoked
+from marderlab_tools.analysis import contracture, hikcontrol, nerve_evoked
 from marderlab_tools.checks.validators import (
     CheckResult,
     all_passed,
@@ -38,6 +38,8 @@ PIPELINE_CANONICAL = {
     "contracture": "contracture",
     "nerve-evoked": "nerve_evoked",
     "nerve_evoked": "nerve_evoked",
+    "hikcontrol": "hikcontrol",
+    "hik-control": "hikcontrol",
 }
 
 ProgressFn = Callable[[str], None]
@@ -126,23 +128,24 @@ def _maybe_plot(output_svg: Path, title: str, y_values: list[float]) -> str | No
 
 
 def _filter_metadata_for_pipeline(frame: pd.DataFrame, settings: Any) -> pd.DataFrame:
+    working = frame.copy()
     metadata_tabs = [str(v).strip() for v in getattr(settings, "metadata_tabs", []) if str(v).strip()]
-    if metadata_tabs and "source_tab" in frame.columns:
+    if metadata_tabs and "source_tab" in working.columns:
         allowed_tabs = {tab.lower() for tab in metadata_tabs}
-        mask = frame["source_tab"].astype(str).str.strip().str.lower().isin(allowed_tabs)
-        tab_subset = frame.loc[mask].copy()
+        mask = working["source_tab"].astype(str).str.strip().str.lower().isin(allowed_tabs)
+        tab_subset = working.loc[mask].copy()
         if not tab_subset.empty:
-            return tab_subset
+            working = tab_subset
 
     experiment_type_values = list(getattr(settings, "experiment_type_values", []))
-    if "experiment_type" in frame.columns and experiment_type_values:
+    if "experiment_type" in working.columns and experiment_type_values:
         allowed = {str(v).strip().lower() for v in experiment_type_values}
-        mask = frame["experiment_type"].astype(str).str.strip().str.lower().isin(allowed)
-        exp_subset = frame.loc[mask].copy()
+        mask = working["experiment_type"].astype(str).str.strip().str.lower().isin(allowed)
+        exp_subset = working.loc[mask].copy()
         if not exp_subset.empty:
             return exp_subset
 
-    return frame.copy()
+    return working
 
 
 def _build_trace_records(
@@ -285,6 +288,9 @@ def _run_single_experiment(
     elif pipeline_name in {"nerve_evoked", "nerve-evoked"}:
         typed_records = [nerve_evoked.TraceRecord(**r) for r in trace_records]
         payload = nerve_evoked.analyze_experiment(typed_records, settings)
+    elif pipeline_name in {"hikcontrol", "hik-control"}:
+        typed_records = [hikcontrol.TraceRecord(**r) for r in trace_records]
+        payload = hikcontrol.analyze_experiment(typed_records, settings)
     else:
         raise ValueError(f"Unsupported pipeline: {pipeline_name}")
 
@@ -574,7 +580,7 @@ def run_all(
     results: list[PipelineResult] = []
     selected_input_files: list[Path] = []
 
-    for pipeline_name in ("contracture", "nerve_evoked"):
+    for pipeline_name in ("contracture", "nerve_evoked", "hikcontrol"):
         if pipeline_name not in config.pipelines:
             continue
         settings = config.pipelines[pipeline_name]

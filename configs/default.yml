@@ -69,9 +69,9 @@ pipelines:
     metadata_tabs:
       - FTBath
     experiment_type_values:
-      - contracture
-      - Contracture
-      - bath contracture
+      - 10xtrange
+      - prelim
+      - 10xprelim
     force_channel: force
     trig_channel: trig
     baseline_seconds: 2.0
@@ -87,6 +87,21 @@ pipelines:
       - nerve evoked contraction
       - PairedContractions
       - paired contractions
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+  hikcontrol:
+    metadata_tabs:
+      - FTBath
+    experiment_type_values:
+      - 10xcontrol
+      - dual10xK
+      - KSIF
+      - Kdoseresponse
     force_channel: force
     trig_channel: trig
     baseline_seconds: 2.0

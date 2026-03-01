@@ -23,6 +23,7 @@ marder doctor --config configs/default.yml
 marder sync-metadata --config configs/default.yml
 marder run --pipeline contracture --config configs/default.yml
 marder run --pipeline nerve-evoked --config configs/default.yml
+marder run --pipeline hikcontrol --config configs/default.yml
 marder run-all --config configs/default.yml
 ```
 

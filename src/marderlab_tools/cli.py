@@ -20,7 +20,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sync_parser.add_argument("--config", required=True, help="Path to YAML config file.")
 
     run_parser = sub.add_parser("run", help="Run one pipeline.")
-    run_parser.add_argument("--pipeline", required=True, choices=["contracture", "nerve-evoked", "nerve_evoked"])
+    run_parser.add_argument(
+        "--pipeline",
+        required=True,
+        choices=["contracture", "nerve-evoked", "nerve_evoked", "hikcontrol", "hik-control"],
+    )
     run_parser.add_argument("--config", required=True, help="Path to YAML config file.")
     run_parser.add_argument("--plots", action="store_true", help="Generate SVG plots.")
     run_parser.add_argument(
