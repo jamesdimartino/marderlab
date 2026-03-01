@@ -1,0 +1,102 @@
+paths:
+  raw_data_root: "C:/Users/james/Desktop/MarderLab/data"
+  processed_root: "C:/Users/james/Desktop/MarderLab/data/processed_data"
+  cache_root: ".cache/marderlab"
+
+metadata:
+  google_sheet_url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTtVhS0VwtAOj80c0RromaAHAEXuODhg48-OZ3vdKzZegYmYCwwdGqUPuKKfS6L9v-7JPpPt3XPWLlm/pubhtml"
+  tabs:
+    - "FTBath"
+    - "FTMuscle"
+    - "FTSpont"
+  cache_csv: ".cache/marderlab/metadata_latest.csv"
+  required_fields:
+    - notebook_page
+    - file_index
+    - stim_index
+    - temperature
+    - condition
+    - experiment_type
+    - season
+  column_map:
+    notebook_page:
+      - notebook_page
+      - NotebookPage
+      - notebook_page_id
+    file_index:
+      - file_index
+      - file_number
+      - file_no
+      - file
+      - abf_index
+    stim_index:
+      - stim_index
+      - stim
+      - stimulus_index
+      - stimulus
+      - condition_index
+    temperature:
+      - temperature
+      - temp
+      - bath_temp
+      - temp_index
+    condition:
+      - condition
+      - cond
+      - treatment
+      - conditions
+    experiment_type:
+      - experiment_type
+      - experiment
+      - protocol
+      - analysis
+    season:
+      - season
+    calibration:
+      - calibration
+      - calib
+      - scale
+      - Calibration
+      - Calibration2
+    filename:
+      - filename
+      - file_name
+      - abf_file
+      - abf_filename
+
+pipelines:
+  contracture:
+    metadata_tabs:
+      - FTBath
+    experiment_type_values:
+      - contracture
+      - Contracture
+      - bath contracture
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+  nerve_evoked:
+    metadata_tabs:
+      - FTMuscle
+    experiment_type_values:
+      - nerve_evoked
+      - nerve evoked contraction
+      - PairedContractions
+      - paired contractions
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+
+checks:
+  fail_mode: experiment_only
+
+stats:
+  default_rule: by_group_count
