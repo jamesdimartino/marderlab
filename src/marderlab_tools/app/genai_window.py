@@ -60,7 +60,24 @@ def make_agent(agent_config_path: str | Path, workspace_root: str | Path) -> Age
     cfg = load_agent_config(agent_config_path)
     router = ModelRouter.from_dict(cfg.get("router", {}))
     context = ContextService(Path(workspace_root))
-    pipelines = list(cfg.get("pipelines", ["contracture", "nerve_evoked", "hikcontrol"]))
+    pipelines = list(
+        cfg.get(
+            "pipelines",
+            [
+                "contracture",
+                "nerve_evoked",
+                "hikcontrol",
+                "control",
+                "dualhik",
+                "freqrange",
+                "gm56acclim",
+                "gm56weaklink",
+                "muscle",
+                "heartbeat",
+                "rawheart",
+            ],
+        )
+    )
     default_pipeline_config = str(cfg.get("pipeline_config_path", "configs/default.yml"))
     tools = ToolRegistry(
         context=context,

@@ -28,7 +28,19 @@ class ToolRegistry:
         default_config_path: str | None = None,
     ) -> None:
         self.context = context
-        self.pipelines = pipelines or ["contracture", "nerve_evoked", "hikcontrol"]
+        self.pipelines = pipelines or [
+            "contracture",
+            "nerve_evoked",
+            "hikcontrol",
+            "control",
+            "dualhik",
+            "freqrange",
+            "gm56acclim",
+            "gm56weaklink",
+            "muscle",
+            "heartbeat",
+            "rawheart",
+        ]
         self.default_config_path = default_config_path or "configs/default.yml"
         self._tools: dict[str, tuple[ToolSpec, Callable[[dict[str, Any]], dict[str, Any]]]] = {
             "workspace_summary": (
@@ -168,7 +180,12 @@ class ToolRegistry:
             "marder run --pipeline contracture --config configs/default.yml",
             "marder run --pipeline nerve-evoked --config configs/default.yml",
             "marder run --pipeline hikcontrol --config configs/default.yml",
+            "marder run --pipeline dualhik --config configs/default.yml",
+            "marder run --pipeline gm56weaklink --config configs/default.yml",
+            "marder run --pipeline heartbeat --config configs/default.yml",
             "marder run-all --config configs/default.yml",
+            "marder simulate --model hiksim --output outputs/hiksim_run.npz",
+            "marder stimulus-gen --output outputs/burst_train.csv",
             "marder genai-window --agent-config configs/genai.yml",
         ]
         return {"commands": commands}

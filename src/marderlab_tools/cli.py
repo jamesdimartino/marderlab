@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Callable
 
 from marderlab_tools.config.schema import load_config
@@ -20,11 +21,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sync_parser.add_argument("--config", required=True, help="Path to YAML config file.")
 
     run_parser = sub.add_parser("run", help="Run one pipeline.")
-    run_parser.add_argument(
-        "--pipeline",
-        required=True,
-        choices=["contracture", "nerve-evoked", "nerve_evoked", "hikcontrol", "hik-control"],
-    )
+    run_parser.add_argument("--pipeline", required=True)
     run_parser.add_argument("--config", required=True, help="Path to YAML config file.")
     run_parser.add_argument("--plots", action="store_true", help="Generate SVG plots.")
     run_parser.add_argument(
@@ -80,6 +77,28 @@ def _build_parser() -> argparse.ArgumentParser:
     genai_chat.add_argument("--workspace-root", default=".", help="Workspace root for code context.")
     genai_chat.add_argument("--model", default="", help="Model name in agent config.")
     genai_chat.add_argument("--prompt", required=True, help="Prompt to run.")
+
+    simulate = sub.add_parser("simulate", help="Run notebook-ported simulation models.")
+    simulate.add_argument(
+        "--model",
+        required=True,
+        choices=["hiksim", "modelfiber", "musclemodel", "untitled-model"],
+        help="Simulation model to run.",
+    )
+    simulate.add_argument("--output", required=True, help="Output .npz file path.")
+    simulate.add_argument("--duration-s", type=float, default=None)
+    simulate.add_argument("--dt-s", type=float, default=None)
+    simulate.add_argument("--temperature-c", type=float, default=None)
+
+    stimgen = sub.add_parser("stimulus-gen", help="Generate burst stimulus file from StimulusGen port.")
+    stimgen.add_argument("--output", required=True, help="Output CSV path.")
+    stimgen.add_argument("--duration-s", type=float, default=60.0)
+    stimgen.add_argument("--sample-rate-hz", type=float, default=10000.0)
+    stimgen.add_argument("--burst-count", type=int, default=10)
+    stimgen.add_argument("--burst-width-s", type=float, default=0.08)
+    stimgen.add_argument("--burst-amplitude-v", type=float, default=5.0)
+    stimgen.add_argument("--start-delay-s", type=float, default=2.0)
+    stimgen.add_argument("--inter-burst-s", type=float, default=4.0)
     return parser
 
 
@@ -174,6 +193,71 @@ def main(argv: list[str] | None = None) -> int:
                 model_name=args.model or None,
             )
             _print_json(result)
+            return 0
+
+        if args.command == "simulate":
+            import numpy as np
+
+            from marderlab_tools.modeling.hiksim import HiKSimParams, run_hiksim
+            from marderlab_tools.modeling.modelfiber import FiberParams, run_modelfiber
+            from marderlab_tools.modeling.musclemodelrealistic_vm import (
+                MuscleVMParams,
+                run_musclemodelrealistic_vm,
+            )
+            from marderlab_tools.modeling.untitled_model import UntitledParams, run_untitled_model
+
+            model = str(args.model)
+            if model == "hiksim":
+                params = HiKSimParams(
+                    duration_s=args.duration_s if args.duration_s is not None else 300.0,
+                    dt_s=args.dt_s if args.dt_s is not None else 0.01,
+                    temperature_c=args.temperature_c if args.temperature_c is not None else 12.0,
+                )
+                payload = run_hiksim(params)
+            elif model == "modelfiber":
+                params = FiberParams(
+                    duration_s=args.duration_s if args.duration_s is not None else 20.0,
+                    dt_s=args.dt_s if args.dt_s is not None else 0.001,
+                    temperature_c=args.temperature_c if args.temperature_c is not None else 12.0,
+                )
+                payload = run_modelfiber(params)
+            elif model == "musclemodel":
+                params = MuscleVMParams(
+                    duration_s=args.duration_s if args.duration_s is not None else 240.0,
+                    dt_s=args.dt_s if args.dt_s is not None else 0.005,
+                    temperatures_c=(args.temperature_c if args.temperature_c is not None else 12.0,),
+                )
+                payload = run_musclemodelrealistic_vm(params)
+            else:
+                params = UntitledParams(
+                    duration_s=args.duration_s if args.duration_s is not None else 10.0,
+                    dt_s=args.dt_s if args.dt_s is not None else 0.0005,
+                    temperature_c=args.temperature_c if args.temperature_c is not None else 12.0,
+                )
+                payload = run_untitled_model(params)
+
+            out = Path(args.output).expanduser().resolve()
+            out.parent.mkdir(parents=True, exist_ok=True)
+            arrays = {k: v for k, v in payload.items() if hasattr(v, "shape")}
+            np.savez_compressed(out, **arrays, summary=np.array([json.dumps(payload.get("summary", {}))], dtype=object))
+            print(str(out))
+            return 0
+
+        if args.command == "stimulus-gen":
+            from marderlab_tools.stimulus.stimulusgen import StimulusSpec, generate_burst_train, write_stimulus_file
+
+            spec = StimulusSpec(
+                duration_s=float(args.duration_s),
+                sample_rate_hz=float(args.sample_rate_hz),
+                burst_count=int(args.burst_count),
+                burst_width_s=float(args.burst_width_s),
+                burst_amplitude_v=float(args.burst_amplitude_v),
+                start_delay_s=float(args.start_delay_s),
+                inter_burst_s=float(args.inter_burst_s),
+            )
+            payload = generate_burst_train(spec)
+            out = write_stimulus_file(args.output, payload)
+            print(str(out))
             return 0
 
         parser.print_help()

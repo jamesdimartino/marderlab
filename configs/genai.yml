@@ -11,6 +11,14 @@ pipelines:
   - contracture
   - nerve_evoked
   - hikcontrol
+  - control
+  - dualhik
+  - freqrange
+  - gm56acclim
+  - gm56weaklink
+  - muscle
+  - heartbeat
+  - rawheart
 
 router:
   default_model: anthropic-sonnet

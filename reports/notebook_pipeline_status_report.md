@@ -53,6 +53,24 @@ Generated from all non-checkpoint notebooks under `C:\Users\james\Desktop\Marder
   - `musclemodelrealisticVm (1).ipynb` (nerve-evoked/muscle, readiness=5/10)
   - `StimulusGen.ipynb` (stimulus-generation, readiness=3/10)
 
+## Porting Update (2026-03-01)
+
+- Newly ported ABF pipelines:
+  - `control.ipynb` -> `control`
+  - `dualhik.ipynb` -> `dualhik`
+  - `freqrange.ipynb` -> `freqrange`
+  - `gm56acclim.ipynb` -> `gm56acclim`
+  - `gm56weaklink.ipynb` -> `gm56weaklink`
+  - `Heartbeat.ipynb` -> `heartbeat`
+  - `rawheart.ipynb` -> `rawheart`
+  - `Muscle.ipynb` -> `muscle`
+- Newly ported modeling/synthesis commands:
+  - `HIKSIM.ipynb` -> `marder simulate --model hiksim`
+  - `modelfiber.ipynb` -> `marder simulate --model modelfiber`
+  - `musclemodelrealisticVm (1).ipynb` -> `marder simulate --model musclemodel`
+  - `Untitled.ipynb` -> `marder simulate --model untitled-model`
+  - `StimulusGen.ipynb` -> `marder stimulus-gen`
+
 ## Conventions and Rigor Findings
 
 - Common strengths:

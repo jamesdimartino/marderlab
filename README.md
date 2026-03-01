@@ -24,9 +24,14 @@ marder sync-metadata --config configs/default.yml
 marder run --pipeline contracture --config configs/default.yml
 marder run --pipeline nerve-evoked --config configs/default.yml
 marder run --pipeline hikcontrol --config configs/default.yml
+marder run --pipeline dualhik --config configs/default.yml
+marder run --pipeline gm56weaklink --config configs/default.yml
+marder run --pipeline heartbeat --config configs/default.yml
 marder run-all --config configs/default.yml
 marder genai-chat --agent-config configs/genai.yml --prompt "How does run-all select experiments?"
 marder genai-window --agent-config configs/genai.yml
+marder simulate --model hiksim --output outputs/hiksim_run.npz
+marder stimulus-gen --output outputs/burst_train.csv
 ```
 
 Add `--plots` to `run` or `run-all` to save SVG plots.
@@ -102,6 +107,12 @@ Per run:
 - `run_report.json`
 - `run_report.html`
 - run manifest in cache
+
+## Notebook Ports (Current)
+
+- ABF pipelines: `contracture`, `nerve_evoked`, `hikcontrol`, `control`, `dualhik`, `freqrange`, `gm56acclim`, `gm56weaklink`, `muscle`, `heartbeat`, `rawheart`
+- Modeling ports: `hiksim`, `modelfiber`, `musclemodel`, `untitled-model` (via `marder simulate`)
+- Stimulus generation port: `StimulusGen.ipynb` (via `marder stimulus-gen`)
 
 ## Data safety and rigor
 

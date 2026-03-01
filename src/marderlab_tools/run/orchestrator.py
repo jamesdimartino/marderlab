@@ -11,7 +11,19 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
-from marderlab_tools.analysis import contracture, hikcontrol, nerve_evoked
+from marderlab_tools.analysis import (
+    contracture,
+    control,
+    dualhik,
+    freqrange,
+    gm56acclim,
+    gm56weaklink,
+    heartbeat,
+    hikcontrol,
+    muscle,
+    nerve_evoked,
+    rawheart,
+)
 from marderlab_tools.checks.validators import (
     CheckResult,
     all_passed,
@@ -40,9 +52,31 @@ PIPELINE_CANONICAL = {
     "nerve_evoked": "nerve_evoked",
     "hikcontrol": "hikcontrol",
     "hik-control": "hikcontrol",
+    "control": "control",
+    "dualhik": "dualhik",
+    "freqrange": "freqrange",
+    "gm56acclim": "gm56acclim",
+    "gm56weaklink": "gm56weaklink",
+    "heartbeat": "heartbeat",
+    "rawheart": "rawheart",
+    "muscle": "muscle",
 }
 
 ProgressFn = Callable[[str], None]
+
+PIPELINE_ANALYZERS: dict[str, tuple[Any, Callable[[list[Any], Any], dict[str, Any]]]] = {
+    "contracture": (contracture.TraceRecord, contracture.analyze_experiment),
+    "nerve_evoked": (nerve_evoked.TraceRecord, nerve_evoked.analyze_experiment),
+    "hikcontrol": (hikcontrol.TraceRecord, hikcontrol.analyze_experiment),
+    "control": (control.TraceRecord, control.analyze_experiment),
+    "dualhik": (dualhik.TraceRecord, dualhik.analyze_experiment),
+    "freqrange": (freqrange.TraceRecord, freqrange.analyze_experiment),
+    "gm56acclim": (gm56acclim.TraceRecord, gm56acclim.analyze_experiment),
+    "gm56weaklink": (gm56weaklink.TraceRecord, gm56weaklink.analyze_experiment),
+    "heartbeat": (heartbeat.TraceRecord, heartbeat.analyze_experiment),
+    "rawheart": (rawheart.TraceRecord, rawheart.analyze_experiment),
+    "muscle": (muscle.TraceRecord, muscle.analyze_experiment),
+}
 
 
 def _normalize_pipeline_name(name: str) -> str:
@@ -207,18 +241,13 @@ def _filter_metadata_for_pipeline(frame: pd.DataFrame, settings: Any) -> pd.Data
     if metadata_tabs and "source_tab" in working.columns:
         allowed_tabs = {tab.lower() for tab in metadata_tabs}
         mask = working["source_tab"].astype(str).str.strip().str.lower().isin(allowed_tabs)
-        tab_subset = working.loc[mask].copy()
-        if not tab_subset.empty:
-            working = tab_subset
+        working = working.loc[mask].copy()
 
     experiment_type_values = list(getattr(settings, "experiment_type_values", []))
     if "experiment_type" in working.columns and experiment_type_values:
         allowed = {str(v).strip().lower() for v in experiment_type_values}
         mask = working["experiment_type"].astype(str).str.strip().str.lower().isin(allowed)
-        exp_subset = working.loc[mask].copy()
-        if not exp_subset.empty:
-            return exp_subset
-
+        working = working.loc[mask].copy()
     return working
 
 
@@ -360,17 +389,16 @@ def _run_single_experiment(
         file_idx = int(record["metadata"].get("file_index", 0))
         file_metadata_by_index[file_idx] = record["metadata"]
 
-    if pipeline_name == "contracture":
-        typed_records = [contracture.TraceRecord(**r) for r in trace_records]
-        payload = contracture.analyze_experiment(typed_records, settings)
-    elif pipeline_name in {"nerve_evoked", "nerve-evoked"}:
-        typed_records = [nerve_evoked.TraceRecord(**r) for r in trace_records]
-        payload = nerve_evoked.analyze_experiment(typed_records, settings)
-    elif pipeline_name in {"hikcontrol", "hik-control"}:
-        typed_records = [hikcontrol.TraceRecord(**r) for r in trace_records]
-        payload = hikcontrol.analyze_experiment(typed_records, settings)
-    else:
+    analyzer_entry = PIPELINE_ANALYZERS.get(pipeline_name)
+    if analyzer_entry is None and pipeline_name == "nerve-evoked":
+        analyzer_entry = PIPELINE_ANALYZERS.get("nerve_evoked")
+    if analyzer_entry is None and pipeline_name == "hik-control":
+        analyzer_entry = PIPELINE_ANALYZERS.get("hikcontrol")
+    if analyzer_entry is None:
         raise ValueError(f"Unsupported pipeline: {pipeline_name}")
+    trace_type, analyze_fn = analyzer_entry
+    typed_records = [trace_type(**r) for r in trace_records]
+    payload = analyze_fn(typed_records, settings)
 
     npy_dir = output_root / notebook_page / "npy"
     plots_dir = output_root / notebook_page / "plots"
@@ -667,10 +695,27 @@ def run_all(
     results: list[PipelineResult] = []
     selected_input_files: list[Path] = []
 
-    for pipeline_name in ("contracture", "nerve_evoked", "hikcontrol"):
-        if pipeline_name not in config.pipelines:
+    seen: set[str] = set()
+    configured: list[str] = []
+    for name in config.pipelines.keys():
+        canonical = _normalize_pipeline_name(name)
+        if canonical not in PIPELINE_ANALYZERS:
             continue
-        settings = config.pipelines[pipeline_name]
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        configured.append(canonical)
+
+    for pipeline_name in configured:
+        canonical = _normalize_pipeline_name(pipeline_name)
+        settings = config.pipelines.get(canonical)
+        if settings is None:
+            alt = canonical.replace("-", "_")
+            if alt in config.pipelines:
+                settings = config.pipelines[alt]
+            else:
+                continue
+        pipeline_run_name = canonical
         filtered_meta = _filter_metadata_for_pipeline(metadata_df, settings)
         pages = _apply_page_subset(
             _pipeline_pages(experiments, filtered_meta),
@@ -679,22 +724,22 @@ def run_all(
         )
         if progress:
             progress(
-                f"pipeline={pipeline_name} selected_experiments={len(pages)} "
+                f"pipeline={pipeline_run_name} selected_experiments={len(pages)} "
                 f"plots={generate_plots} metadata_note={note}"
             )
 
         total = len(pages)
         for idx, page in enumerate(pages, start=1):
             if progress:
-                progress(f"[{idx}/{total}] start {pipeline_name} {page}")
+                progress(f"[{idx}/{total}] start {pipeline_run_name} {page}")
             files = experiments[page]
             meta = metadata_for_experiment(filtered_meta, page)
             issues = _metadata_incomplete_issues(meta, files, config.metadata.required_fields)
             if issues:
-                result = _excluded_experiment_result(page, pipeline_name, issues)
+                result = _excluded_experiment_result(page, pipeline_run_name, issues)
                 results.append(result)
                 if progress:
-                    progress(f"[{idx}/{total}] excluded {pipeline_name} {page}: {result.message}")
+                    progress(f"[{idx}/{total}] excluded {pipeline_run_name} {page}: {result.message}")
                 continue
 
             selected_input_files.extend(files)
@@ -703,7 +748,7 @@ def run_all(
                     notebook_page=page,
                     files=files,
                     metadata_df=meta,
-                    pipeline_name=pipeline_name,
+                    pipeline_name=pipeline_run_name,
                     settings=settings,
                     output_root=config.paths.processed_root,
                     generate_plots=generate_plots,
@@ -711,7 +756,7 @@ def run_all(
             except Exception as exc:
                 result = PipelineResult(
                     notebook_page=page,
-                    pipeline=pipeline_name,
+                    pipeline=pipeline_run_name,
                     success=False,
                     message=str(exc),
                 )
@@ -719,7 +764,7 @@ def run_all(
             if progress:
                 artifact = result.output_paths.get("plot") or result.output_paths.get("npy", "")
                 status = "ok" if result.success else "failed"
-                progress(f"[{idx}/{total}] {status} {pipeline_name} {page} {artifact}".strip())
+                progress(f"[{idx}/{total}] {status} {pipeline_run_name} {page} {artifact}".strip())
 
     finished_at = datetime.now(tz=UTC)
     return _write_run_reports(

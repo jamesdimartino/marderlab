@@ -109,6 +109,111 @@ pipelines:
     quality_std_floor: 0.000001
     quality_clip_abs: 10.0
     trigger_threshold: 0.5
+  control:
+    metadata_tabs:
+      - FTBath
+    experiment_type_values:
+      - 10xcontrol
+      - control
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+  dualhik:
+    metadata_tabs:
+      - FTBath
+    experiment_type_values:
+      - dual10xk
+      - 10xk11c
+      - kdoseresponse
+      - ksif
+      - dualhik
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+  freqrange:
+    metadata_tabs:
+      - FTMuscle
+    experiment_type_values:
+      - freqrange
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+  gm56acclim:
+    metadata_tabs:
+      - FTMuscle
+    experiment_type_values:
+      - acclim
+      - gm56acclim
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+  gm56weaklink:
+    metadata_tabs:
+      - FTMuscle
+    experiment_type_values:
+      - weaklink
+      - gm56weaklink
+      - 10xk11c
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+  muscle:
+    metadata_tabs:
+      - FTMuscle
+    experiment_type_values:
+      - muscle
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+  heartbeat:
+    metadata_tabs:
+      - FTSpont
+    experiment_type_values:
+      - heartbeat
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
+  rawheart:
+    metadata_tabs:
+      - FTSpont
+    experiment_type_values:
+      - rawheart
+      - heartbeat_raw
+    force_channel: force
+    trig_channel: trig
+    baseline_seconds: 2.0
+    sample_rate_hz: 10000.0
+    quality_std_floor: 0.000001
+    quality_clip_abs: 10.0
+    trigger_threshold: 0.5
 
 checks:
   fail_mode: experiment_only
