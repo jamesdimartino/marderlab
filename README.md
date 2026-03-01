@@ -49,6 +49,7 @@ Features:
 
 - Reads project code context directly from your VSCode workspace
 - Exposes safe read-only tools (search code, read excerpts, list pipelines/commands)
+- Adds safe pipeline helpers (static config validation, experiment preview from cache, run-command builder)
 - Supports multiple model providers via `configs/genai.yml` with fallback
 - Saves chat transcripts to `.cache/marderlab/agent_chat/`
 

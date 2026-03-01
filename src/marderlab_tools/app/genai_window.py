@@ -61,7 +61,12 @@ def make_agent(agent_config_path: str | Path, workspace_root: str | Path) -> Age
     router = ModelRouter.from_dict(cfg.get("router", {}))
     context = ContextService(Path(workspace_root))
     pipelines = list(cfg.get("pipelines", ["contracture", "nerve_evoked", "hikcontrol"]))
-    tools = ToolRegistry(context=context, pipelines=pipelines)
+    default_pipeline_config = str(cfg.get("pipeline_config_path", "configs/default.yml"))
+    tools = ToolRegistry(
+        context=context,
+        pipelines=pipelines,
+        default_config_path=default_pipeline_config,
+    )
     system_prompt = str(cfg.get("system_prompt", ""))
     max_steps = int(cfg.get("max_steps", 4))
     return AgentLoop(
