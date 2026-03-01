@@ -108,4 +108,9 @@ def test_hikcontrol_pipeline_writes_outputs(tmp_path: Path, monkeypatch) -> None
     assert report["summary"]["total_experiments"] == 1
     assert report["summary"]["success_count"] == 1
     npy_file = processed / "997_200" / "npy" / "hikcontrol_metrics.npy"
+    tidy_csv = processed / "997_200" / "npy" / "hikcontrol_metrics_tidy.csv"
     assert npy_file.exists()
+    assert tidy_csv.exists()
+    tidy_df = pd.read_csv(tidy_csv)
+    assert {"metric_name", "metric_value", "file_index", "pipeline"}.issubset(set(tidy_df.columns))
+    assert (tidy_df["pipeline"] == "hikcontrol").all()

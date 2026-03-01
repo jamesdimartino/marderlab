@@ -62,6 +62,8 @@ Per experiment:
 ```text
 {processed_root}/{notebook_page}/
   npy/
+    {pipeline}_metrics.npy
+    {pipeline}_metrics_tidy.csv
   plots/
 ```
 

@@ -106,6 +106,80 @@ def _atomic_save_npy(path: Path, payload: Any) -> None:
             os.remove(tmp_path)
 
 
+def _atomic_save_csv(path: Path, frame: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".csv", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            frame.to_csv(handle, index=False)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+def _is_finite_number(value: Any) -> bool:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return bool(np.isfinite(number))
+
+
+def _metric_unit(metric_name: str) -> str:
+    name = metric_name.lower()
+    if name.endswith("_cn"):
+        return "cN"
+    if name.endswith("_cn_s"):
+        return "cN*s"
+    if name.endswith("_cn_per_s"):
+        return "cN/s"
+    if name.endswith("_v"):
+        return "V"
+    if name.endswith("_s"):
+        return "s"
+    if name.endswith("_hz"):
+        return "Hz"
+    if "temperature" in name:
+        return "C"
+    return "unitless"
+
+
+def _build_tidy_metrics_frame(
+    notebook_page: str,
+    pipeline_name: str,
+    payload: dict[str, Any],
+    file_metadata_by_index: dict[int, dict[str, Any]],
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for entry in payload.get("files", []):
+        file_index = int(entry.get("file_index", 0))
+        metadata = file_metadata_by_index.get(file_index, {})
+        metrics = entry.get("metrics", {})
+        source_file = str(entry.get("file_path", ""))
+        for metric_name, metric_value in metrics.items():
+            if not _is_finite_number(metric_value):
+                continue
+            rows.append(
+                {
+                    "notebook_page": notebook_page,
+                    "pipeline": pipeline_name,
+                    "file_index": file_index,
+                    "temperature": metadata.get("temperature"),
+                    "condition": metadata.get("condition"),
+                    "stim_index": metadata.get("stim_index"),
+                    "experiment_type": metadata.get("experiment_type"),
+                    "season": metadata.get("season"),
+                    "source_tab": metadata.get("source_tab"),
+                    "metric_name": str(metric_name),
+                    "metric_value": float(metric_value),
+                    "metric_unit": _metric_unit(str(metric_name)),
+                    "source_file": source_file,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def _maybe_plot(output_svg: Path, title: str, y_values: list[float]) -> str | None:
     if not y_values:
         return None
@@ -281,6 +355,10 @@ def _run_single_experiment(
         )
 
     trace_records = _build_trace_records(notebook_page, files, metadata_df, channel_map)
+    file_metadata_by_index: dict[int, dict[str, Any]] = {}
+    for record in trace_records:
+        file_idx = int(record["metadata"].get("file_index", 0))
+        file_metadata_by_index[file_idx] = record["metadata"]
 
     if pipeline_name == "contracture":
         typed_records = [contracture.TraceRecord(**r) for r in trace_records]
@@ -297,9 +375,17 @@ def _run_single_experiment(
     npy_dir = output_root / notebook_page / "npy"
     plots_dir = output_root / notebook_page / "plots"
     npy_path = npy_dir / f"{pipeline_name}_metrics.npy"
+    tidy_csv_path = npy_dir / f"{pipeline_name}_metrics_tidy.csv"
     _atomic_save_npy(npy_path, payload)
+    tidy_frame = _build_tidy_metrics_frame(
+        notebook_page=notebook_page,
+        pipeline_name=pipeline_name,
+        payload=payload,
+        file_metadata_by_index=file_metadata_by_index,
+    )
+    _atomic_save_csv(tidy_csv_path, tidy_frame)
 
-    output_paths = {"npy": str(npy_path)}
+    output_paths = {"npy": str(npy_path), "tidy_csv": str(tidy_csv_path)}
     if generate_plots:
         peaks = [
             float(item["metrics"].get("peak_cn", item["metrics"].get("amplitude_cn", 0.0)))
@@ -314,6 +400,7 @@ def _run_single_experiment(
             )
 
     checks.append(CheckResult(name="output_npy_exists", passed=npy_path.exists(), message=str(npy_path)))
+    checks.append(CheckResult(name="output_tidy_csv_exists", passed=tidy_csv_path.exists(), message=str(tidy_csv_path)))
     return PipelineResult(
         notebook_page=notebook_page,
         pipeline=pipeline_name,

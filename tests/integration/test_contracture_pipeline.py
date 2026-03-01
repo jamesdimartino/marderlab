@@ -105,4 +105,20 @@ def test_contracture_pipeline_writes_outputs(tmp_path: Path, monkeypatch) -> Non
     assert report["summary"]["total_experiments"] == 1
     assert report["summary"]["success_count"] == 1
     npy_file = processed / "997_001" / "npy" / "contracture_metrics.npy"
+    tidy_csv = processed / "997_001" / "npy" / "contracture_metrics_tidy.csv"
     assert npy_file.exists()
+    assert tidy_csv.exists()
+    tidy_df = pd.read_csv(tidy_csv)
+    required_cols = {
+        "notebook_page",
+        "pipeline",
+        "file_index",
+        "temperature",
+        "condition",
+        "stim_index",
+        "metric_name",
+        "metric_value",
+        "metric_unit",
+    }
+    assert required_cols.issubset(set(tidy_df.columns))
+    assert (tidy_df["pipeline"] == "contracture").all()
