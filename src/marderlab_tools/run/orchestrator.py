@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -386,7 +387,86 @@ def _write_run_reports(
         "run_report_html": str(run_html),
         "manifest_json": str(manifest_path),
     }
+
+    vscode_gallery = _write_vscode_sanity_gallery(
+        config=config,
+        run_id=manifest.run_id,
+        results=results,
+    )
+    if vscode_gallery is not None:
+        report["artifacts"]["vscode_sanity_html"] = str(vscode_gallery)
     return report
+
+
+def _write_vscode_sanity_gallery(
+    config: RunConfig,
+    run_id: str,
+    results: list[PipelineResult],
+) -> Path | None:
+    gallery_root = config.paths.cache_root / "vscode_sanity" / run_id
+    plots_dir = gallery_root / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, str]] = []
+    for result in results:
+        source_plot = result.output_paths.get("plot")
+        if not source_plot:
+            continue
+        source_path = Path(source_plot)
+        if not source_path.exists():
+            continue
+        safe_name = (
+            f"{result.pipeline}_{result.notebook_page}_{source_path.name}"
+            .replace(" ", "_")
+            .replace("/", "_")
+            .replace("\\", "_")
+        )
+        dest = plots_dir / safe_name
+        shutil.copy2(source_path, dest)
+        copied.append(
+            {
+                "pipeline": result.pipeline,
+                "notebook_page": result.notebook_page,
+                "status": "PASS" if result.success else "FAIL",
+                "plot_rel": f"plots/{safe_name}",
+                "source_plot": str(source_path),
+            }
+        )
+
+    if not copied:
+        return None
+
+    rows = []
+    for item in copied:
+        rows.append(
+            "<div class='card'>"
+            f"<h3>{item['pipeline']} - {item['notebook_page']} ({item['status']})</h3>"
+            f"<p><a href='{item['plot_rel']}' target='_blank'>{item['plot_rel']}</a></p>"
+            f"<p>Processed-data file: {item['source_plot']}</p>"
+            f"<img src='{item['plot_rel']}' loading='lazy' />"
+            "</div>"
+        )
+
+    html_doc = (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<title>VSCode Sanity Gallery</title>"
+        "<style>"
+        "body{font-family:Arial,sans-serif;margin:16px;background:#f8fafc;}"
+        "h1{margin-bottom:6px;} .meta{margin-bottom:14px;color:#444;}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px;}"
+        ".card{background:#fff;padding:10px;border:1px solid #ddd;border-radius:8px;}"
+        ".card img{width:100%;height:auto;border:1px solid #ddd;background:#fff;}"
+        "a{color:#0b57d0;}"
+        "</style></head><body>"
+        f"<h1>VSCode Sanity Gallery</h1><div class='meta'>Run ID: {run_id}</div>"
+        "<div class='grid'>"
+        + "".join(rows)
+        + "</div></body></html>"
+    )
+
+    gallery_html = gallery_root / "index.html"
+    gallery_html.write_text(html_doc, encoding="utf-8")
+    return gallery_html
 
 
 def run_pipeline(

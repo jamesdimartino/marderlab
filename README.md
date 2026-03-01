@@ -48,6 +48,12 @@ This writes SVG sanity plots to:
 {processed_root}/{notebook_page}/plots/
 ```
 
+It also writes a VSCode-local gallery for that run:
+
+```text
+{cache_root}/vscode_sanity/{run_id}/index.html
+```
+
 ## Output layout
 
 Per experiment:

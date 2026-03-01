@@ -103,10 +103,16 @@ def test_subset_pages_and_live_progress(tmp_path: Path, monkeypatch) -> None:
             channel_names=["force", "trig"],
         )
 
+    def fake_plot(output_svg, _title, _y_values):
+        output_svg.parent.mkdir(parents=True, exist_ok=True)
+        output_svg.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>", encoding="utf-8")
+        return None
+
     logs: list[str] = []
 
     monkeypatch.setattr(orchestrator, "load_metadata_with_fallback", fake_load_metadata)
     monkeypatch.setattr(orchestrator, "load_force_trigger", fake_abf_loader)
+    monkeypatch.setattr(orchestrator, "_maybe_plot", fake_plot)
 
     report = orchestrator.run_pipeline(
         config,
@@ -122,3 +128,6 @@ def test_subset_pages_and_live_progress(tmp_path: Path, monkeypatch) -> None:
     assert report["results"][0]["notebook_page"] == "997_102"
     assert any("start contracture 997_102" in line for line in logs)
     assert any("ok contracture 997_102" in line for line in logs)
+    gallery = report["artifacts"].get("vscode_sanity_html")
+    assert gallery is not None
+    assert Path(gallery).exists()
